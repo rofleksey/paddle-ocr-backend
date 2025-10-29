@@ -1,0 +1,4 @@
+flask==3.1.2
+waitress==3.0.2
+paddleocr==3.3.0
+paddlepaddle==3.2.0
