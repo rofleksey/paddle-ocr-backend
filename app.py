@@ -3,30 +3,32 @@ from paddleocr import PaddleOCR
 import logging
 import os
 import traceback
+import uuid
+import threading
 
 app = Flask(__name__)
 
-ocr = None
+thread_local = threading.local()
 
-
-def initialize_ocr():
-    global ocr
-    try:
-        ocr = PaddleOCR(
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False
-        )
-        app.logger.info("PaddleOCR initialized successfully")
-    except Exception as e:
-        app.logger.error(f"Failed to initialize PaddleOCR: {str(e)}")
-        raise
-
+def get_ocr_instance():
+    """Get or create OCR instance for the current thread"""
+    if not hasattr(thread_local, 'ocr'):
+        try:
+            thread_local.ocr = PaddleOCR(
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=True,
+                use_textline_orientation=True,
+                lang='en',
+            )
+            app.logger.info(f"PaddleOCR initialized for thread {threading.get_ident()}")
+        except Exception as e:
+            app.logger.error(f"Failed to initialize PaddleOCR: {str(e)}")
+            raise
+    return thread_local.ocr
 
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "healthy"})
-
 
 @app.route('/ocr', methods=['POST'])
 def process_ocr():
@@ -38,15 +40,17 @@ def process_ocr():
         if file.filename == '':
             return jsonify({"error": "No file selected"}), 400
 
-        if ocr is None:
-            return jsonify({"error": "OCR engine not initialized"}), 500
+        # Get thread-specific OCR instance
+        ocr = get_ocr_instance()
 
-        temp_path = f"/tmp/{file.filename}"
+        temp_path = f"/tmp/{uuid.uuid4()}.png"
         file.save(temp_path)
 
-        result = ocr.predict(input=temp_path)
-
-        os.remove(temp_path)
+        try:
+            result = ocr.predict(input=temp_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
         if not result:
             return jsonify({"results": []})
@@ -66,10 +70,8 @@ def process_ocr():
         app.logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    initialize_ocr()
     from waitress import serve
     import multiprocessing
 
