@@ -76,4 +76,5 @@ if __name__ == '__main__':
     import multiprocessing
 
     threads = multiprocessing.cpu_count()
+    app.logger.info(f"Using {threads} threads")
     serve(app, host='0.0.0.0', port=5000, threads=threads)
